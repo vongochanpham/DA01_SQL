@@ -16,3 +16,9 @@ FROM callers;
 select name from customer
 where referee_id !=2 or referee_id is null;
 --ex5: stratascratch the-number-of-survivors.
+select survived,
+sum(case when pclass=1 then 1 else 0 end) as first_class,
+sum(case when pclass=2 then 1 else 0 end) as second_class,
+sum(case when pclass=3 then 1 else 0 end) as third_class
+from titanic
+group by survived
