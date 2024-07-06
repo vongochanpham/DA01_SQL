@@ -1,0 +1,95 @@
+--Chuyển đổi kiểu dữ liệu phù hợp cho các trường ( sử dụng câu lệnh ALTER) 
+-- Select all columns and rows from the SALES_DATASET_RFM_PRJ table
+SELECT * FROM SALES_DATASET_RFM_PRJ;
+-- Alter the SALES_DATASET_RFM_PRJ table to change the data type of specific columns
+ALTER TABLE SALES_DATASET_RFM_PRJ
+ALTER COLUMN orderlinenumber TYPE numeric USING (trim(orderlinenumber)::numeric),
+ALTER COLUMN quantityordered TYPE numeric USING (trim(quantityordered)::numeric)
+ALTER COLUMN phone TYPE numeric USING (trim(phone)::numeric);
+--Check NULL/BLANK (‘’)  ở các trường: ORDERNUMBER, QUANTITYORDERED, PRICEEACH, ORDERLINENUMBER, SALES, ORDERDATE.
+SELECT * FROM SALES_DATASET_RFM_PRJ
+ALTER TABLE SALES_DATASET_RFM_PRJ
+ADD CONTACTLASTNAME VARCHAR(255),
+ADD CONTACTFIRSTNAME VARCHAR(255)
+UPDATE SALES_DATASET_RFM_PRJ
+SET CONTACTFIRSTNAME = (SUBSTR(CONTACTFULLNAME, 1, INSTR(CONTACTFULLNAME, ' ') - 1)),
+    CONTACTLASTNAME =(SUBSTR(CONTACTFULLNAME, INSTR(CONTACTFULLNAME, ' ') + 1));
+SELECT CONTACTFULLNAME, CONTACTFIRSTNAME, CONTACTLASTNAME
+FROM SALES_DATASET_RFM_PRJ;
+
+--Thêm cột CONTACTLASTNAME, CONTACTFIRSTNAME được tách ra từ CONTACTFULLNAME . 
+SELECT * FROM SALES_DATASET_RFM_PRJ
+ALTER TABLE SALES_DATASET_RFM_PRJ
+ADD CONTACTLASTNAME VARCHAR(255),
+ADD CONTACTFIRSTNAME VARCHAR(255)
+UPDATE SALES_DATASET_RFM_PRJ
+SET CONTACTFIRSTNAME = (SUBSTR(CONTACTFULLNAME, 1, INSTR(CONTACTFULLNAME, ' ') - 1)),
+    CONTACTLASTNAME =(SUBSTR(CONTACTFULLNAME, INSTR(CONTACTFULLNAME, ' ') + 1));
+SELECT CONTACTFULLNAME, CONTACTFIRSTNAME, CONTACTLASTNAME
+FROM SALES_DATASET_RFM_PRJ;
+
+--Chuẩn hóa CONTACTLASTNAME, CONTACTFIRSTNAME theo định dạng chữ cái đầu tiên viết hoa, chữ cái tiếp theo viết thường. 
+UPDATE SALES_DATASET_RFM_PRJ
+SET CONTACTLASTNAME = CONCAT(UPPER(SUBSTRING(CONTACTLASTNAME, 1, 1)), LOWER(SUBSTRING(CONTACTLASTNAME, 2))),
+    CONTACTFIRSTNAME = CONCAT(UPPER(SUBSTRING(CONTACTFIRSTNAME, 1, 1)), LOWER(SUBSTRING(CONTACTFIRSTNAME, 2)));
+
+
+Gợi ý: ( ADD column sau đó UPDATE)
+--Thêm cột QTR_ID, MONTH_ID, YEAR_ID lần lượt là Qúy, tháng, năm được lấy ra từ ORDERDATE 
+-- Step 1: Add new columns for QTR_ID, MONTH_ID, and YEAR_ID
+ALTER TABLE SALES_DATASET_RFM_PRJ
+ADD COLUMN QTR_ID INT,
+ADD COLUMN MONTH_ID INT,
+ADD COLUMN YEAR_ID INT;
+
+-- Step 2: Update QTR_ID, MONTH_ID, and YEAR_ID based on ORDERDATE
+UPDATE SALES_DATASET_RFM_PRJ
+SET 
+    QTR_ID = EXTRACT(QUARTER FROM ORDERDATE),
+    MONTH_ID = EXTRACT(MONTH FROM ORDERDATE),
+    YEAR_ID = EXTRACT(YEAR FROM ORDERDATE);
+
+-- Step 3: Verify the updates
+SELECT QTR_ID, MONTH_ID, YEAR_ID
+FROM SALES_DATASET_RFM_PRJ;
+
+--Hãy tìm outlier (nếu có) cho cột QUANTITYORDERED và hãy chọn cách xử lý cho bản ghi đó (2 cách) ( Không chạy câu lệnh trước khi bài được review)
+SELECT * FROM  sales_dataset_rfm_prj
+-- tìm outliner sử dụng IQR/boxplot
+with Twt_min_max_values AS(
+SELECT Q1 - 1.5*IQR AS min_value,
+Q3 + 1.5*IQR AS max_value FROM
+(percentile_cont (0.25) within (ORDER by QUANTITYORDERED) AS Q1,
+percentile_cont (0.75) within (ORDER by QUANTITYORDERED) AS Q3,
+percentile_cont (0.75) within (ORDER by QUANTITYORDERED)-percentile_cont (0.25) within (ORDER by QUANTITYORDERED)AS IQR
+FROM  sales_dataset_rfm_prj) AS a)
+--- Xác định outliner
+SELECT * FROM sales_dataset_rfm_prj
+WHERE QUANTITYORDERED< (SELECT min_value FROM Twt_min_max_values )
+or QUANTITYORDERED> (SELECT max_value FROM Twt_min_max_values )
+--- sử dụng Z-score
+SELECT avg(QUANTITYORDERED),
+stddev(QUANTITYORDERED)
+FROM sales_dataset_rfm_prj
+ 
+with cte as
+(SELECT orderdate,QUANTITYORDERED,(avg(QUANTITYORDERED) FROM sales_dataset_rfm_prj) AS avg,
+(stddev(QUANTITYORDERED) FROM sales_dataset_rfm_prj) AS stddev
+FROM sales_dataset_rfm_prj)
+,twt_outliner AS(
+SELECT orderdate,QUANTITYORDERED,(QUANTITYORDERED-avg)/stddev AS z_score
+from cte
+where ABS ((QUANTITYORDERED-avg)/stddev)>2)
+ 
+UPDATE sales_dataset_rfm_prj
+SET QUANTITYORDERED=(avg(QUANTITYORDERED) FROM sales_dataset_rfm_prj)
+WHERE QUANTITYORDERED IN(SELECT QUANTITYORDERED FROM twt_outliner);
+ 
+DELETE FROM sales_dataset_rfm_prj
+WHERE QUANTITYORDERED IN(SELECT QUANTITYORDERED FROM twt_outliner);
+--Sau khi làm sạch dữ liệu, hãy lưu vào bảng mới  tên là SALES_DATASET_RFM_PRJ_CLEAN
+CREATE TABLE SALES_DATASET_RFM_PRJ_CLEAN AS
+SELECT *
+FROM SALES_DATASET_RFM_PRJ
+WHERE 1 = 0;
+
